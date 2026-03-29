@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptrace"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -64,14 +67,7 @@ func doTask(ctx context.Context, connType string) {
 		},
 	}
 
-	urls := []string{
-		"https://www.google.com",
-		"https://www.cloudflare.com",
-		"https://www.facebook.com",
-		"https://www.instagram.com",
-		"https://github.com",
-		"https://www.netflix.com",
-	}
+	urls := getTargetUrls()
 
 	results := fetchByUrls(urls, client, ctx, &probe)
 	if err := saveResults(results); err != nil {
@@ -80,17 +76,33 @@ func doTask(ctx context.Context, connType string) {
 	fmt.Printf("💾 Сохранено %d замеров\n", len(results))
 }
 
-func fetchByUrls(urls []string, client *http.Client, ctx context.Context, probe *ProbeInfo) []Measurement {
+func getTargetUrls() []Target {
+	data, err := os.ReadFile("configs/targets.yaml")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var config Config
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("targets %v\n", config.Targets)
+	return config.Targets
+}
+
+func fetchByUrls(urls []Target, client *http.Client, ctx context.Context, probe *ProbeInfo) []Measurement {
 	var results []Measurement
 	var dnsStart, dnsEnd, connectStart, connectEnd, tlsStart, tlsEnd, firstByte time.Time
 	trace := getHttpTraceClient(&dnsStart, &dnsEnd, &connectStart, &connectEnd, &tlsStart, &tlsEnd, &firstByte)
 
-	for _, url := range urls {
+	for _, target := range urls {
 
-		fmt.Println("Fetching " + url)
+		fmt.Println("Fetching " + target.URL)
 		req, _ := http.NewRequestWithContext(
 			httptrace.WithClientTrace(ctx, trace),
-			"GET", url, nil,
+			"GET", target.URL, nil,
 		)
 		req.Header.Set("User-Agent", "NexusProbe/0.1")
 
@@ -107,7 +119,7 @@ func fetchByUrls(urls []string, client *http.Client, ctx context.Context, probe 
 
 		meas := Measurement{
 			Probe:        *probe, // заполнен при старте
-			Target:       url,
+			Target:       target,
 			Success:      err == nil && resp.StatusCode < 400,
 			StatusCode:   resp.StatusCode,
 			DNSLookup:    float64(dnsEnd.Sub(dnsStart).Milliseconds()),

@@ -7,7 +7,7 @@ type Measurement struct {
 	Probe ProbeInfo `json:"probe"`
 
 	// Что измерял
-	Target string `json:"target"`
+	Target Target `json:"target"`
 
 	// Результат
 	Success    bool   `json:"success"`

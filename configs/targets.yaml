@@ -1,0 +1,12 @@
+# configs/targets.yaml
+targets:
+  - url: "https://www.google.com"
+    category: "search"
+  - url: "https://www.cloudflare.com"
+    category: "cdn"
+  - url: "https://www.facebook.com"
+    category: "social"
+  - url: "https://github.com"
+    category: "dev"
+  - url: "https://www.netflix.com"
+    category: "streaming"
