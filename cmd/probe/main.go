@@ -3,18 +3,18 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"flag"
 	"log"
 	"net/http"
 	"net/http/httptrace"
-	"os"
+	"nexus-probe/internal/config"
+	"nexus-probe/internal/models"
+	"nexus-probe/internal/probe"
+	"nexus-probe/internal/storage"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -40,17 +40,25 @@ func main() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	connType := detectConnectionType()
 	log.Printf("Демон запущен выполняю задачу каждую минуту")
 
-	doTask(ctx, detectConnectionType())
+	probeInfo, err := probe.DetectInfo(ctx)
+
+	if err != nil {
+		log.Printf("Не удалось определить локацию: %v", err)
+		probeInfo = models.ProbeInfo{ConnectionType: probe.DetectConnectionType()}
+	}
+
+	log.Println(probeInfo)
+
+	doTask(ctx, probeInfo)
 	for {
 		select {
 		case <-ticker.C:
-			doTask(ctx, connType)
+			doTask(ctx, probeInfo)
 
 		case <-ctx.Done():
-			log.Printf("Сигнал получен. Завершаемся")
+			log.Printf("Завершаемся")
 			return
 		}
 	}
@@ -66,22 +74,8 @@ func printConfig() {
 	log.Println(strings.Repeat("=", 50))
 }
 
-func doTask(ctx context.Context, connType string) {
+func doTask(ctx context.Context, probeInfo models.ProbeInfo) {
 	log.Printf("\n=== Задача начата в %s ===\n", time.Now().Format("15:04:05"))
-	req, _ := http.NewRequestWithContext(ctx, "GET", "http://ip-api.com/json/", nil)
-	currentLocation, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		log.Printf("Ошибка: %v\n", err)
-		return
-	}
-	defer currentLocation.Body.Close()
-
-	var probe ProbeInfo
-	json.NewDecoder(currentLocation.Body).Decode(&probe)
-
-	probe.ConnectionType = connType
-	log.Println(probe)
 
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -95,30 +89,20 @@ func doTask(ctx context.Context, connType string) {
 
 	urls := getTargetUrls()
 
-	results := fetchByUrls(urls, client, ctx, &probe)
-	if err := saveResults(results); err != nil {
+	results := fetchByUrls(urls, client, ctx, &probeInfo)
+	if err := storage.SaveResults(outputPath, results); err != nil {
 		log.Printf("Ошибка записи: %v\n", err)
 	}
 	log.Printf("Сохранено %d замеров\n", len(results))
 }
 
-func getTargetUrls() []Target {
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var config Config
-	err = yaml.Unmarshal(data, &config)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return config.Targets
+func getTargetUrls() []models.Target {
+	cnf, _ := config.Load(configPath)
+	return cnf.Targets
 }
 
-func fetchByUrls(urls []Target, client *http.Client, ctx context.Context, probe *ProbeInfo) []Measurement {
-	var results []Measurement
+func fetchByUrls(urls []models.Target, client *http.Client, ctx context.Context, probe *models.ProbeInfo) []models.Measurement {
+	var results []models.Measurement
 	var dnsStart, dnsEnd, connectStart, connectEnd, tlsStart, tlsEnd, firstByte time.Time
 	trace := getHttpTraceClient(&dnsStart, &dnsEnd, &connectStart, &connectEnd, &tlsStart, &tlsEnd, &firstByte)
 
@@ -142,7 +126,7 @@ func fetchByUrls(urls []Target, client *http.Client, ctx context.Context, probe 
 		}
 		resp.Body.Close()
 
-		meas := Measurement{
+		meas := models.Measurement{
 			Probe:        *probe, // заполнен при старте
 			Target:       target,
 			Success:      err == nil && resp.StatusCode < 400,
@@ -205,44 +189,4 @@ func getHttpTraceClient(dnsStart *time.Time, dnsEnd *time.Time,
 			log.Printf("[%s] Получен первый байт ответа\n", time.Now().Format("15:04:05.000"))
 		},
 	}
-}
-
-func detectConnectionType() string {
-	data, err := os.ReadFile("/proc/net/route")
-	if err != nil {
-		return "unknown"
-	}
-
-	for _, line := range strings.Split(string(data), "\n")[1:] {
-		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[1] == "00000000" {
-			iface := fields[0]
-
-			if _, err := os.Stat("/sys/class/net/" + iface + "/wireless"); err == nil {
-				return "wifi"
-			}
-			return "ethernet"
-		}
-	}
-
-	return "unknown"
-}
-
-func saveResults(measurements []Measurement) error {
-	f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	for _, m := range measurements {
-		data, err := json.Marshal(m)
-		if err != nil {
-			continue
-		}
-		f.Write(data)
-		f.Write([]byte("\n"))
-	}
-
-	return nil
 }

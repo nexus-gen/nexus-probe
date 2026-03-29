@@ -1,6 +1,8 @@
-package main
+package models
 
-import "time"
+import (
+	"time"
+)
 
 type Measurement struct {
 	// Кто измерял

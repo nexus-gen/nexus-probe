@@ -1,4 +1,4 @@
-package main
+package models
 
 type ProbeInfo struct {
 	IP             string  `json:"query"`
