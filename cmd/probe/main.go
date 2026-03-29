@@ -97,8 +97,14 @@ func doTask(ctx context.Context, probeInfo models.ProbeInfo) {
 }
 
 func getTargetUrls() []models.Target {
-	cnf, _ := config.Load(configPath)
-	return cnf.Targets
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		log.Fatalf("Не удалось загрузить конфиг: %v", err)
+	}
+	if len(cfg.Targets) == 0 {
+		log.Fatal("Список целей пуст")
+	}
+	return cfg.Targets
 }
 
 func fetchByUrls(urls []models.Target, client *http.Client, ctx context.Context, probe *models.ProbeInfo) []models.Measurement {
