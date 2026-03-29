@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptrace"
@@ -42,7 +41,7 @@ func main() {
 	defer ticker.Stop()
 
 	connType := detectConnectionType()
-	fmt.Println("Демон запущен выполняю задачу каждую минуту")
+	log.Printf("Демон запущен выполняю задачу каждую минуту")
 
 	doTask(ctx, detectConnectionType())
 	for {
@@ -51,7 +50,7 @@ func main() {
 			doTask(ctx, connType)
 
 		case <-ctx.Done():
-			fmt.Println("Сигнал получен. Завершаемся")
+			log.Printf("Сигнал получен. Завершаемся")
 			return
 		}
 	}
@@ -68,12 +67,12 @@ func printConfig() {
 }
 
 func doTask(ctx context.Context, connType string) {
-	fmt.Printf("\n=== Задача начата в %s ===\n", time.Now().Format("15:04:05"))
+	log.Printf("\n=== Задача начата в %s ===\n", time.Now().Format("15:04:05"))
 	req, _ := http.NewRequestWithContext(ctx, "GET", "http://ip-api.com/json/", nil)
 	currentLocation, err := http.DefaultClient.Do(req)
 
 	if err != nil {
-		fmt.Printf("❌ Ошибка: %v\n", err)
+		log.Printf("Ошибка: %v\n", err)
 		return
 	}
 	defer currentLocation.Body.Close()
@@ -82,7 +81,7 @@ func doTask(ctx context.Context, connType string) {
 	json.NewDecoder(currentLocation.Body).Decode(&probe)
 
 	probe.ConnectionType = connType
-	fmt.Println(probe)
+	log.Println(probe)
 
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -98,9 +97,9 @@ func doTask(ctx context.Context, connType string) {
 
 	results := fetchByUrls(urls, client, ctx, &probe)
 	if err := saveResults(results); err != nil {
-		fmt.Printf("❌ Ошибка записи: %v\n", err)
+		log.Printf("Ошибка записи: %v\n", err)
 	}
-	fmt.Printf("💾 Сохранено %d замеров\n", len(results))
+	log.Printf("Сохранено %d замеров\n", len(results))
 }
 
 func getTargetUrls() []Target {
@@ -125,7 +124,7 @@ func fetchByUrls(urls []Target, client *http.Client, ctx context.Context, probe 
 
 	for _, target := range urls {
 
-		fmt.Println("Fetching " + target.URL)
+		log.Println("Fetching " + target.URL)
 		req, _ := http.NewRequestWithContext(
 			httptrace.WithClientTrace(ctx, trace),
 			"GET", target.URL, nil,
@@ -134,11 +133,11 @@ func fetchByUrls(urls []Target, client *http.Client, ctx context.Context, probe 
 
 		start := time.Now()
 
-		fmt.Printf("🚀 [%s] Начало запроса\n", start.Format("15:04:05.000"))
+		log.Printf("[%s] Начало запроса\n", start.Format("15:04:05.000"))
 
 		resp, err := client.Do(req)
 		if err != nil {
-			fmt.Printf("❌ Ошибка: %v\n", err)
+			log.Printf("Ошибка: %v\n", err)
 			return results
 		}
 		resp.Body.Close()
@@ -157,7 +156,7 @@ func fetchByUrls(urls []Target, client *http.Client, ctx context.Context, probe 
 		}
 
 		results = append(results, meas)
-		fmt.Printf("%+v\n", meas)
+		log.Printf("%+v\n", meas)
 	}
 
 	return results
@@ -189,21 +188,21 @@ func getHttpTraceClient(dnsStart *time.Time, dnsEnd *time.Time,
 
 		GotConn: func(info httptrace.GotConnInfo) {
 			if info.Reused {
-				fmt.Printf("♻️  [%s] Использовано существующее соединение\n",
+				log.Printf("[%s] Использовано существующее соединение\n",
 					time.Now().Format("15:04:05.000"))
 			} else {
-				fmt.Printf("✨ [%s] Создано новое соединение\n",
+				log.Printf("[%s] Создано новое соединение\n",
 					time.Now().Format("15:04:05.000"))
 			}
 		},
 
 		WroteRequest: func(info httptrace.WroteRequestInfo) {
-			fmt.Printf("📤 [%s] Запрос отправлен\n", time.Now().Format("15:04:05.000"))
+			log.Printf("[%s] Запрос отправлен\n", time.Now().Format("15:04:05.000"))
 		},
 
 		GotFirstResponseByte: func() {
 			*firstByte = time.Now()
-			fmt.Printf("📥 [%s] Получен первый байт ответа\n", time.Now().Format("15:04:05.000"))
+			log.Printf("[%s] Получен первый байт ответа\n", time.Now().Format("15:04:05.000"))
 		},
 	}
 }
