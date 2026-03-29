@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,11 +18,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var (
+	configPath string
+	interval   time.Duration
+	outputPath string
+)
+
+func init() {
+	flag.StringVar(&configPath, "config", "configs/targets.yaml", "path to config")
+	flag.DurationVar(&interval, "interval", 60*time.Second, "measurement interval (e.g., 10s, 30s, 1m, 5m)")
+	flag.StringVar(&outputPath, "output", "measurements.jsonl", "output file path")
+}
+
 func main() {
+	flag.Parse()
+
+	printConfig()
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	connType := detectConnectionType()
@@ -38,6 +55,16 @@ func main() {
 			return
 		}
 	}
+}
+
+func printConfig() {
+	log.Println(strings.Repeat("=", 50))
+	log.Println("Nexus Probe Configuration")
+	log.Println(strings.Repeat("=", 50))
+	log.Printf("%-20s: %s", "Config file", configPath)
+	log.Printf("%-20s: %v", "Interval", interval)
+	log.Printf("%-20s: %s", "Output path", outputPath)
+	log.Println(strings.Repeat("=", 50))
 }
 
 func doTask(ctx context.Context, connType string) {
@@ -77,7 +104,7 @@ func doTask(ctx context.Context, connType string) {
 }
 
 func getTargetUrls() []Target {
-	data, err := os.ReadFile("configs/targets.yaml")
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,7 +115,6 @@ func getTargetUrls() []Target {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("targets %v\n", config.Targets)
 	return config.Targets
 }
 
@@ -204,7 +230,7 @@ func detectConnectionType() string {
 }
 
 func saveResults(measurements []Measurement) error {
-	f, err := os.OpenFile("measurements.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
