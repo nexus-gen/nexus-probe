@@ -10,3 +10,5 @@ targets:
     category: "dev"
   - url: "https://www.netflix.com"
     category: "streaming"
+  - url: "https://www.amazon.co.jp"
+    category: "marketplace"
