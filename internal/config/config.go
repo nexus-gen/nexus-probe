@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	Targets []models.Target `yaml:"targets"`
+	Server  models.Server   `yaml:"server"`
 }
 
 func Load(path string) (*Config, error) {

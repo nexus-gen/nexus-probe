@@ -5,11 +5,14 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"nexus-probe/internal/auth"
 	"nexus-probe/internal/checker"
 	"nexus-probe/internal/config"
 	"nexus-probe/internal/models"
 	"nexus-probe/internal/probe"
+	"nexus-probe/internal/sender"
 	"nexus-probe/internal/storage"
+	"nexus-probe/internal/util"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -20,12 +23,14 @@ var (
 	configPath string
 	interval   time.Duration
 	outputPath string
+	serverUrl  string
 )
 
 func init() {
 	flag.StringVar(&configPath, "config", "configs/targets.yaml", "path to config")
 	flag.DurationVar(&interval, "interval", 60*time.Second, "measurement interval (e.g., 10s, 30s, 1m, 5m)")
 	flag.StringVar(&outputPath, "output", "measurements.jsonl", "output file path")
+	flag.StringVar(&serverUrl, "server", "", "server URL for probe registration and metrics")
 }
 
 func main() {
@@ -39,12 +44,12 @@ func main() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("Демон запущен выполняю задачу каждую минуту")
+	log.Printf("Daemon started, executing task every %v", interval)
 
 	probeInfo, err := probe.DetectInfo(ctx)
 
 	if err != nil {
-		log.Printf("Не удалось определить локацию: %v", err)
+		log.Printf("Failed to determine location: %v", err)
 		probeInfo = models.ProbeInfo{ConnectionType: probe.DetectConnectionType()}
 	}
 
@@ -57,7 +62,7 @@ func main() {
 			doTask(ctx, probeInfo)
 
 		case <-ctx.Done():
-			log.Printf("Завершаемся")
+			log.Printf("Shutting down")
 			return
 		}
 	}
@@ -74,7 +79,7 @@ func printConfig() {
 }
 
 func doTask(ctx context.Context, probeInfo models.ProbeInfo) {
-	log.Printf("\n=== Задача начата в %s ===\n", time.Now().Format("15:04:05"))
+	log.Printf("	Task started at %s", time.Now().Format("15:04:05"))
 
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -86,22 +91,40 @@ func doTask(ctx context.Context, probeInfo models.ProbeInfo) {
 		},
 	}
 
-	urls := getTargetUrls()
+	cfg := getCfg()
 
-	results := checker.CheckAll(ctx, client, urls, probeInfo)
+	results := checker.CheckAll(ctx, client, cfg.Targets, probeInfo)
 	if err := storage.SaveResults(outputPath, results); err != nil {
-		log.Printf("Ошибка записи: %v\n", err)
+		log.Printf("Failed to write file: %v\n", err)
 	}
-	log.Printf("Сохранено %d замеров\n", len(results))
+
+	priorityServerUrl := util.FirstNonEmpty(serverUrl, cfg.Server.URL)
+
+	if priorityServerUrl != "" {
+		apiKey, err := auth.GetOrRegister(ctx, priorityServerUrl, probeInfo)
+
+		if err == nil {
+			if sendErr := sender.Send(results, sender.Config{
+				ServerUrl: priorityServerUrl,
+				ApiKey:    apiKey,
+			}); sendErr != nil {
+				log.Printf("Failed to send to server: %v, server: %v", err, priorityServerUrl)
+			}
+		}
+	} else {
+		log.Printf("API not configured, working in offline mode")
+	}
+
+	log.Printf("Saved %d measurements\n", len(results))
 }
 
-func getTargetUrls() []models.Target {
+func getCfg() *config.Config {
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("Не удалось загрузить конфиг: %v", err)
+		log.Fatalf("Failed to load config: %v", err)
 	}
 	if len(cfg.Targets) == 0 {
-		log.Fatal("Список целей пуст")
+		log.Fatalf("Target list is empty")
 	}
-	return cfg.Targets
+	return cfg
 }

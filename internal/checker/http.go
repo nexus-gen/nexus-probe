@@ -29,21 +29,21 @@ func newTrace() (*traceResult, *httptrace.ClientTrace) {
 
 		GotConn: func(info httptrace.GotConnInfo) {
 			if info.Reused {
-				log.Printf("[%s] Использовано существующее соединение",
+				log.Printf("[%s] Reused existing connection",
 					time.Now().Format("15:04:05.000"))
 			} else {
-				log.Printf("[%s] Создано новое соединение",
+				log.Printf("[%s] New connection established",
 					time.Now().Format("15:04:05.000"))
 			}
 		},
 
 		WroteRequest: func(_ httptrace.WroteRequestInfo) {
-			log.Printf("[%s] Запрос отправлен", time.Now().Format("15:04:05.000"))
+			log.Printf("[%s] Request sent", time.Now().Format("15:04:05.000"))
 		},
 
 		GotFirstResponseByte: func() {
 			t.firstByte = time.Now()
-			log.Printf("[%s] Получен первый байт ответа",
+			log.Printf("[%s] Received first response byte",
 				time.Now().Format("15:04:05.000"))
 		},
 	}
@@ -60,7 +60,7 @@ func CheckURL(ctx context.Context, client *http.Client, target models.Target, pr
 	req.Header.Set("User-Agent", "NexusProbe/0.1")
 
 	start := time.Now()
-	log.Printf("[%s] Начало запроса\n", start.Format("15:04:05.000"))
+	log.Printf("[%s] Starting request \n", start.Format("15:04:05.000"))
 
 	resp, err := client.Do(req)
 	if err != nil {

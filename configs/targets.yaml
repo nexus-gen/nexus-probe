@@ -12,3 +12,6 @@ targets:
     category: "streaming"
   - url: "https://www.amazon.co.jp"
     category: "marketplace"
+
+server:
+  url: ""
